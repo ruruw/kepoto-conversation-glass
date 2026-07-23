@@ -402,7 +402,7 @@ export default {
 </script>
 
 <page>
-  <view class="container">
+  <scroll-view class="container" scroll-y="true">
     <view class="hero">
       <text class="page-title">Conversation Copilot</text>
       <text class="page-description">
@@ -451,7 +451,7 @@ export default {
       <text class="transcript-label">Dipilih</text>
       <text class="picked-text">{{pickedVariant}}</text>
     </view>
-  </view>
+  </scroll-view>
 </page>
 
 <style>
@@ -460,6 +460,8 @@ export default {
     flex-direction: column;
     gap: 16px;
     padding: var(--theme-padding, 20px);
+    height: 100%;
+    box-sizing: border-box;
   }
 
   .hero {
