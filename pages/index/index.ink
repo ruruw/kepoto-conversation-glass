@@ -405,35 +405,26 @@ export default {
   <scroll-view class="container" scroll-y="true">
     <view class="hero">
       <text class="page-title">Conversation Copilot</text>
-      <text class="page-description">
-        Dengarkan lawan bicara, lalu tampilkan beberapa opsi balasan singkat yang bisa langsung kamu pilih.
-      </text>
-    </view>
-
-    <view class="status-row">
       <text class="status-chip status-{{status}}">{{status}}</text>
-      <text class="meta-line">LLM: {{availability}}</text>
     </view>
 
     <view class="error-banner" ink:if="{{lastError}}">
       <text class="error-text">{{lastError}}</text>
     </view>
 
-    <view class="card">
-      <text class="transcript-label">Terdengar</text>
+    <!-- Hero blurb and the transcript card only matter before there's
+         something to act on — once variants exist, that picklist IS the
+         payload, so this collapses to keep everything on one 352px-tall
+         screen without needing the still-flaky scroll-view input. -->
+    <view class="card" ink:if="{{variants.length === 0}}">
+      <text class="page-description">Dengarkan lawan bicara, dapatkan opsi balasan singkat.</text>
       <text class="transcript-text">
         {{status === 'listening' ? (liveTranscript || 'Mendengarkan...') : (heardText || 'Belum ada percakapan.')}}
       </text>
-      <view class="button-row">
-        <button class="btn btn-primary" bindtap="toggleListening" disabled="{{isBusy && status !== 'listening'}}">
-          {{status === 'listening' ? 'Berhenti' : 'Mulai Dengar'}}
-        </button>
-        <button class="btn" bindtap="resetTurn">Reset</button>
-      </view>
     </view>
 
-    <view class="card" ink:if="{{variants.length > 0}}">
-      <text class="section-title">Pilihan Balasan</text>
+    <view class="card variants-card" ink:if="{{variants.length > 0}}">
+      <text class="transcript-text-compact">{{heardText}}</text>
       <view class="variant-list">
         <button
           class="variant-btn {{pickedVariant === item ? 'variant-btn-picked' : ''}}"
@@ -447,9 +438,11 @@ export default {
       </view>
     </view>
 
-    <view class="card picked-card" ink:if="{{pickedVariant}}">
-      <text class="transcript-label">Dipilih</text>
-      <text class="picked-text">{{pickedVariant}}</text>
+    <view class="button-row">
+      <button class="btn btn-primary" bindtap="toggleListening" disabled="{{isBusy && status !== 'listening'}}">
+        {{status === 'listening' ? 'Berhenti' : 'Mulai Dengar'}}
+      </button>
+      <button class="btn" bindtap="resetTurn">Reset</button>
     </view>
   </scroll-view>
 </page>
@@ -458,45 +451,40 @@ export default {
   .container {
     display: flex;
     flex-direction: column;
-    gap: 16px;
-    padding: var(--theme-padding, 20px);
-    /* height:100% resolved against an auto-height parent, so the scroll-view
-       never had a bounded box to overflow against — down-arrow input had
-       nothing to scroll. The host injects the real canvas cap via this var. */
+    gap: 8px;
+    padding: 12px;
+    /* Bounded to the real host canvas so nothing here can ever need the
+       still-flaky scroll-view down-arrow input — the layout below is sized
+       to fit inside this on its own. */
     height: var(--app-height-max, 352px);
     box-sizing: border-box;
   }
 
   .hero {
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
     gap: 8px;
   }
 
   .page-title {
-    font-size: 26px;
+    font-size: 18px;
     font-weight: bold;
     color: #40FF5E;
   }
 
   .page-description {
-    font-size: 13px;
-    line-height: 18px;
+    font-size: 12px;
+    line-height: 16px;
     color: #40ff5dbf;
   }
 
-  .status-row {
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    gap: 12px;
-  }
-
   .status-chip {
-    padding: 4px 10px;
+    padding: 2px 8px;
     border-radius: 999px;
     border: 1px solid currentColor;
-    font-size: 11px;
+    font-size: 10px;
     font-weight: bold;
     text-transform: uppercase;
     color: #40ff5dbf;
@@ -517,90 +505,80 @@ export default {
     color: #FF5B3D;
   }
 
-  .meta-line {
-    font-size: 12px;
-    color: #40ff5dbf;
-  }
-
   .error-banner {
-    padding: 10px 14px;
-    border-radius: 12px;
+    padding: 6px 10px;
+    border-radius: 10px;
     border: 1px solid #FF5B3D;
   }
 
   .error-text {
-    font-size: 12px;
+    font-size: 11px;
     color: #FF5B3D;
   }
 
   .card {
     display: flex;
     flex-direction: column;
-    gap: 10px;
-    padding: 14px;
-    border-radius: 12px;
+    gap: 6px;
+    padding: 10px;
+    border-radius: 10px;
     border: 1px solid #40ff5d42;
-  }
-
-  .transcript-label,
-  .section-title {
-    font-size: 11px;
-    font-weight: bold;
-    text-transform: uppercase;
-    color: #40ff5dbf;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
   }
 
   .transcript-text {
-    font-size: 14px;
-    line-height: 20px;
+    font-size: 13px;
+    line-height: 17px;
     color: #40FF5E;
+  }
+
+  .transcript-text-compact {
+    font-size: 11px;
+    line-height: 14px;
+    color: #40ff5dbf;
   }
 
   .button-row {
     display: flex;
     flex-direction: row;
-    gap: 10px;
+    gap: 8px;
   }
 
   .btn {
     color: #40FF5E;
     border: 1px solid #40ff5d42;
-    border-radius: 12px;
-    padding: 6px 12px;
-    font-size: 13px;
+    border-radius: 10px;
+    padding: 5px 10px;
+    font-size: 12px;
   }
 
   .btn-primary {
     border: 2px solid #40FF5E;
   }
 
+  .variants-card {
+    justify-content: center;
+  }
+
   .variant-list {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 6px;
   }
 
   .variant-btn {
     text-align: left;
     color: #40FF5E;
     border: 1px solid #40ff5d42;
-    border-radius: 12px;
-    padding: 10px 12px;
-    font-size: 14px;
-    line-height: 18px;
+    border-radius: 10px;
+    padding: 7px 10px;
+    font-size: 12px;
+    line-height: 15px;
   }
 
   .variant-btn-picked {
     border: 2px solid #40FF5E;
-  }
-
-  .picked-card {
-    border: 2px solid #40FF5E;
-  }
-
-  .picked-text {
-    font-size: 15px;
-    line-height: 20px;
-    color: #40FF5E;
   }
 </style>
