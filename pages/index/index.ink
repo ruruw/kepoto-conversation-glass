@@ -10,6 +10,11 @@ import wx from 'wx';
 const SPEECH_LANG = 'id-ID';
 const ASR_IDLE_TIMEOUT_MS = 5000;
 const VARIANT_COUNT = 3;
+// Short action-style labels for the pills (Mira-reference pattern: tap a
+// terse label, the actual reply text only shows once picked) — index-mapped
+// to the tone order requested in the system prompt below (agree/short, ask
+// a follow-up, polite decline).
+const VARIANT_LABELS = ['Jawab', 'Tanya Lagi', 'Tolak'];
 const EMPTY_TRANSCRIPT_TEXT = 'Tidak ada suara yang terdengar, coba lagi.';
 const ASR_IDLE_TIMEOUT_TEXT = 'ASR tidak ada aktivitas 5 detik, otomatis berhenti.';
 
@@ -347,7 +352,11 @@ export default {
       // not one growing bubble of text, so there's nothing useful to show
       // until the full JSON array is parseable anyway.
       const result = await session.prompt(transcript);
-      const variants = parseVariants(result);
+      const texts = parseVariants(result);
+      const variants = texts.map((text, index) => ({
+        label: VARIANT_LABELS[index] || `Opsi ${index + 1}`,
+        text,
+      }));
       this.setData({ variants });
       this.completeTurn('idle');
     } catch (error) {
@@ -361,7 +370,7 @@ export default {
       : -1;
     const variant = this.data.variants[index];
     if (!variant) return;
-    this.setData({ pickedVariant: variant });
+    this.setData({ pickedVariant: variant.text });
   },
 
   async resetTurn() {
@@ -404,7 +413,7 @@ export default {
 <page>
   <scroll-view class="container" scroll-y="true">
     <view class="hero">
-      <text class="page-title">Copilot</text>
+      <text class="page-title">Conversation Copilot</text>
       <text class="status-chip status-{{status}}">{{status}}</text>
     </view>
 
@@ -427,15 +436,18 @@ export default {
       <view class="heard-bubble">
         <text class="transcript-text-compact">{{heardText}}</text>
       </view>
+      <view class="picked-bubble" ink:if="{{pickedVariant}}">
+        <text class="picked-text">{{pickedVariant}}</text>
+      </view>
       <view class="pill-row">
         <button
-          class="variant-pill {{pickedVariant === item ? 'variant-pill-picked' : ''}}"
+          class="variant-pill {{pickedVariant === item.text ? 'variant-pill-picked' : ''}}"
           ink:for="{{variants}}"
           ink:key="index"
           data-index="{{index}}"
           bindtap="pickVariant"
         >
-          {{item}}
+          {{item.label}}
         </button>
       </view>
     </view>
@@ -454,17 +466,11 @@ export default {
     display: flex;
     flex-direction: column;
     gap: 8px;
-    padding: 10px;
-    /* Corner-anchored HUD card rather than a panel that fills the whole
-       host canvas: fixed + top/right pins it to the top-right of whatever
-       space the host gives this app, width is content-sized (not
-       stretched), and max-height keeps it within the canvas cap so nothing
-       here ever needs the still-flaky scroll-view down-arrow input. */
-    position: fixed;
-    top: 10px;
-    right: 10px;
-    width: 240px;
-    max-height: calc(var(--app-height-max, 352px) - 20px);
+    padding: 12px;
+    /* Centered, full-width panel (back from the corner-anchored variant) —
+       bounded to the real host canvas so nothing here needs the still-flaky
+       scroll-view down-arrow input. */
+    height: var(--app-height-max, 352px);
     box-sizing: border-box;
   }
 
@@ -584,25 +590,42 @@ export default {
     align-self: flex-start;
   }
 
+  /* Full text of the picked option — the pill only ever carries a short
+     action label (Mira-reference pattern), so the actual reply content has
+     to surface somewhere once chosen. */
+  .picked-bubble {
+    padding: 8px 12px;
+    border-radius: 12px;
+    border: 2px solid #40FF5E;
+    background-color: rgba(64, 255, 94, 0.1);
+    align-self: flex-start;
+  }
+
+  .picked-text {
+    font-size: 13px;
+    line-height: 17px;
+    color: #40FF5E;
+  }
+
   /* Individual floating pills instead of one bordered list box — each
      option reads as its own small HUD affordance, not a menu item. */
   .pill-row {
     display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 6px;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
   }
 
   .variant-pill {
-    text-align: right;
+    text-align: center;
     color: #40FF5E;
     border: 1px solid #40ff5d5d;
     border-radius: 999px;
-    padding: 6px 14px;
-    font-size: 11px;
-    line-height: 14px;
+    padding: 7px 16px;
+    font-size: 13px;
+    line-height: 16px;
     background-color: rgba(64, 255, 94, 0.06);
-    max-width: 100%;
   }
 
   .variant-pill-picked {
