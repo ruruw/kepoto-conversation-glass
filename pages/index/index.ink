@@ -460,7 +460,10 @@ export default {
     flex-direction: column;
     gap: 16px;
     padding: var(--theme-padding, 20px);
-    height: 100%;
+    /* height:100% resolved against an auto-height parent, so the scroll-view
+       never had a bounded box to overflow against — down-arrow input had
+       nothing to scroll. The host injects the real canvas cap via this var. */
+    height: var(--app-height-max, 352px);
     box-sizing: border-box;
   }
 
