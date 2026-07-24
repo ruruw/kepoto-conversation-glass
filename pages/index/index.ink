@@ -452,11 +452,17 @@ export default {
     display: flex;
     flex-direction: column;
     gap: 8px;
-    padding: 12px;
-    /* Bounded to the real host canvas so nothing here can ever need the
-       still-flaky scroll-view down-arrow input — the layout below is sized
-       to fit inside this on its own. */
-    height: var(--app-height-max, 352px);
+    padding: 10px;
+    /* Corner-anchored HUD card rather than a panel that fills the whole
+       host canvas: fixed + top/right pins it to the top-right of whatever
+       space the host gives this app, width is content-sized (not
+       stretched), and max-height keeps it within the canvas cap so nothing
+       here ever needs the still-flaky scroll-view down-arrow input. */
+    position: fixed;
+    top: 10px;
+    right: 10px;
+    width: 240px;
+    max-height: calc(var(--app-height-max, 352px) - 20px);
     box-sizing: border-box;
   }
 
