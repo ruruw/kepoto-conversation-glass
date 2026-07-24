@@ -10,31 +10,62 @@ import wx from 'wx';
 const SPEECH_LANG = 'id-ID';
 const ASR_IDLE_TIMEOUT_MS = 5000;
 const VARIANT_COUNT = 3;
-// Short action-style labels for the pills (Mira-reference pattern: tap a
-// terse label, the actual reply text only shows once picked) — index-mapped
-// to the tone order requested in the system prompt below (agree/short, ask
-// a follow-up, polite decline).
+// Sub-option labels shown only after "Answer" is tapped — index-mapped to
+// the tone order requested in ANSWER_PROMPT below (agree/short, follow-up,
+// polite decline).
 const VARIANT_LABELS = ['Jawab', 'Tanya Lagi', 'Tolak'];
 const EMPTY_TRANSCRIPT_TEXT = 'Tidak ada suara yang terdengar, coba lagi.';
 const ASR_IDLE_TIMEOUT_TEXT = 'ASR tidak ada aktivitas 5 detik, otomatis berhenti.';
 
-// The model is instructed to answer ONLY with a JSON array so we can render
-// each suggestion as its own tappable option instead of one long reply —
-// that's the entire point of this page over the stock chat sample.
+// Kept generic on purpose — the task-specific instruction now lives in each
+// ACTIONS.*.buildPrompt() below, sent inline with every session.prompt()
+// call. A fixed task-shaped system prompt (e.g. "always answer with a JSON
+// array") would leak into Get Info / Fact Check turns on the same session
+// and bias their output format.
 const SESSION_OPTIONS = {
   initialPrompts: [
     {
       role: 'system',
       content:
-        `You are a live conversation copilot. The user is listening to someone speak ` +
-        `and needs short reply suggestions, not a conversation with you directly. ` +
-        `Given the other person's last sentence (transcribed from speech), reply with ` +
-        `ONLY a JSON array of ${VARIANT_COUNT} short reply options the user could say next, ` +
-        `each under 12 words, in the same language as the transcript, covering different ` +
-        `tones (e.g. agree/short, ask a follow-up, polite decline). ` +
-        `No prose, no markdown, no explanation — JSON array of strings only.`,
+        'You are a helpful live conversation copilot. Always follow the specific ' +
+        'instruction given in each user message exactly, and answer in the same ' +
+        'language as the quoted conversation snippet.',
     },
   ],
+};
+
+// Mira-reference pattern: three fixed actions always available once
+// something has been heard, each hitting the LLM with a different
+// instruction over the same transcript, rather than one automatic reply.
+const ACTIONS = {
+  answer: {
+    label: 'Answer',
+    kind: 'variants',
+    buildPrompt: (transcript) =>
+      `The user is listening to someone say: "${transcript}"\n\n` +
+      `Reply with ONLY a JSON array of ${VARIANT_COUNT} short reply options the user ` +
+      `could say next, each under 12 words, covering different tones (agree/short, ` +
+      `ask a follow-up, polite decline). No prose, no markdown, no explanation — JSON ` +
+      `array of strings only.`,
+  },
+  'get-info': {
+    label: 'Get Info',
+    kind: 'text',
+    buildPrompt: (transcript) =>
+      `The user is listening to someone say: "${transcript}"\n\n` +
+      `Give a short 1-2 sentence informative note with useful background/context ` +
+      `about the main topic mentioned, to help the user understand it better. Plain ` +
+      `text only, no markdown.`,
+  },
+  'fact-check': {
+    label: 'Fact Check',
+    kind: 'text',
+    buildPrompt: (transcript) =>
+      `The user is listening to someone say: "${transcript}"\n\n` +
+      `Briefly fact-check any factual claim in that statement in 1-2 sentences — say ` +
+      `whether it appears true, false, or unverifiable, and why. Plain text only, no ` +
+      `markdown.`,
+  },
 };
 
 function makeId(prefix) {
@@ -105,8 +136,10 @@ export default {
     isBusy: false,
     liveTranscript: '',
     heardText: '',
+    activeAction: '', // '' | 'answer' | 'get-info' | 'fact-check'
     variants: [],
     pickedVariant: '',
+    actionResult: '',
     lastError: '',
   },
 
@@ -232,8 +265,17 @@ export default {
         return;
       }
 
-      this.setData({ heardText: transcript });
-      await this.generateVariants(this.currentTurnId, transcript);
+      // No automatic LLM call here anymore — just surface the heard text
+      // and let the three action buttons (Answer / Get Info / Fact Check)
+      // wait for the user to pick what they actually want.
+      this.setData({
+        heardText: transcript,
+        activeAction: '',
+        variants: [],
+        pickedVariant: '',
+        actionResult: '',
+      });
+      this.completeTurn('idle');
     };
 
     this.recognition = recognition;
@@ -341,24 +383,37 @@ export default {
     this.disposeRecognition();
   },
 
-  async generateVariants(turnId, transcript) {
-    if (!turnId || this.currentTurnId !== turnId) return;
+  async runAction(event) {
+    const actionKey = event && event.currentTarget && event.currentTarget.dataset
+      ? event.currentTarget.dataset.action
+      : '';
+    const action = ACTIONS[actionKey];
+    if (!action || this.data.isBusy || !this.data.heardText) return;
 
+    this.setData({
+      activeAction: actionKey,
+      variants: [],
+      pickedVariant: '',
+      actionResult: '',
+    });
     this.setStatus('thinking', { isBusy: true });
 
     try {
       const session = await this.ensureSession();
-      // Non-streaming here on purpose: variants render as separate options,
-      // not one growing bubble of text, so there's nothing useful to show
-      // until the full JSON array is parseable anyway.
-      const result = await session.prompt(transcript);
-      const texts = parseVariants(result);
-      const variants = texts.map((text, index) => ({
-        label: VARIANT_LABELS[index] || `Opsi ${index + 1}`,
-        text,
-      }));
-      this.setData({ variants });
-      this.completeTurn('idle');
+      const result = await session.prompt(action.buildPrompt(this.data.heardText));
+
+      if (action.kind === 'variants') {
+        const texts = parseVariants(result);
+        const variants = texts.map((text, index) => ({
+          label: VARIANT_LABELS[index] || `Opsi ${index + 1}`,
+          text,
+        }));
+        this.setData({ variants });
+      } else {
+        this.setData({ actionResult: normalizeText(result) });
+      }
+
+      this.setData({ status: 'idle', isBusy: false });
     } catch (error) {
       this.failTurn(getErrorMessage(error));
     }
@@ -385,8 +440,10 @@ export default {
     this.setData({
       liveTranscript: '',
       heardText: '',
+      activeAction: '',
       variants: [],
       pickedVariant: '',
+      actionResult: '',
       lastError: '',
       isBusy: false,
     });
@@ -421,34 +478,57 @@ export default {
       <text class="error-text">{{lastError}}</text>
     </view>
 
-    <!-- Hero blurb and the transcript card only matter before there's
-         something to act on — once variants exist, that picklist IS the
-         payload, so this collapses to keep everything on one 352px-tall
-         screen without needing the still-flaky scroll-view input. -->
-    <view class="card" ink:if="{{variants.length === 0}}">
-      <text class="page-description">Dengarkan lawan bicara, dapatkan opsi balasan singkat.</text>
+    <!-- Before anything is heard, just show the live/placeholder transcript.
+         Bounded to one 352px-tall screen throughout, so nothing here relies
+         on the still-flaky scroll-view down-arrow input. -->
+    <view class="card" ink:if="{{!heardText}}">
+      <text class="page-description">Dengarkan lawan bicara, lalu pilih aksi.</text>
       <text class="transcript-text">
-        {{status === 'listening' ? (liveTranscript || 'Mendengarkan...') : (heardText || 'Belum ada percakapan.')}}
+        {{status === 'listening' ? (liveTranscript || 'Mendengarkan...') : 'Belum ada percakapan.'}}
       </text>
     </view>
 
-    <view class="variants-wrap" ink:if="{{variants.length > 0}}">
+    <view class="heard-wrap" ink:if="{{heardText}}">
       <view class="heard-bubble">
         <text class="transcript-text-compact">{{heardText}}</text>
       </view>
-      <view class="picked-bubble" ink:if="{{pickedVariant}}">
-        <text class="picked-text">{{pickedVariant}}</text>
-      </view>
+
+      <!-- Three fixed actions, always available once something's been
+           heard — Mira-reference pattern, not one automatic reply. -->
       <view class="pill-row">
-        <button
-          class="variant-pill {{pickedVariant === item.text ? 'variant-pill-picked' : ''}}"
-          ink:for="{{variants}}"
-          ink:key="index"
-          data-index="{{index}}"
-          bindtap="pickVariant"
-        >
-          {{item.label}}
+        <button class="action-pill {{activeAction === 'get-info' ? 'action-pill-active' : ''}}" data-action="get-info" bindtap="runAction" disabled="{{isBusy}}">
+          Get Info
         </button>
+        <button class="action-pill {{activeAction === 'fact-check' ? 'action-pill-active' : ''}}" data-action="fact-check" bindtap="runAction" disabled="{{isBusy}}">
+          Fact Check
+        </button>
+        <button class="action-pill {{activeAction === 'answer' ? 'action-pill-active' : ''}}" data-action="answer" bindtap="runAction" disabled="{{isBusy}}">
+          Answer
+        </button>
+      </view>
+
+      <!-- Answer: sub-picklist of short reply-tone labels; the full text
+           only shows once one is tapped. -->
+      <view class="result-wrap" ink:if="{{activeAction === 'answer' && variants.length > 0}}">
+        <view class="picked-bubble" ink:if="{{pickedVariant}}">
+          <text class="picked-text">{{pickedVariant}}</text>
+        </view>
+        <view class="pill-row">
+          <button
+            class="variant-pill {{pickedVariant === item.text ? 'variant-pill-picked' : ''}}"
+            ink:for="{{variants}}"
+            ink:key="index"
+            data-index="{{index}}"
+            bindtap="pickVariant"
+          >
+            {{item.label}}
+          </button>
+        </view>
+      </view>
+
+      <!-- Get Info / Fact Check: a single short plain-text result. -->
+      <view class="picked-bubble" ink:if="{{(activeAction === 'get-info' || activeAction === 'fact-check') && actionResult}}">
+        <text class="picked-text">{{actionResult}}</text>
       </view>
     </view>
 
@@ -572,12 +652,14 @@ export default {
     border: 2px solid #40FF5E;
   }
 
-  .variants-wrap {
+  .heard-wrap,
+  .result-wrap {
     display: flex;
     flex-direction: column;
     gap: 8px;
     flex: 1;
     min-height: 0;
+    overflow: hidden;
   }
 
   /* Speech-bubble treatment for what was heard, distinct from the pill
@@ -631,5 +713,23 @@ export default {
   .variant-pill-picked {
     border: 2px solid #40FF5E;
     background-color: rgba(64, 255, 94, 0.15);
+  }
+
+  /* The three always-available fixed actions — visually distinct from the
+     variant pills (square-ish corners vs. full pill) so it reads as "mode
+     select" rather than "reply option". */
+  .action-pill {
+    color: #40FF5E;
+    border: 1px solid #40ff5d5d;
+    border-radius: 10px;
+    padding: 7px 14px;
+    font-size: 12px;
+    font-weight: bold;
+    background-color: transparent;
+  }
+
+  .action-pill-active {
+    border: 2px solid #40FF5E;
+    background-color: rgba(64, 255, 94, 0.1);
   }
 </style>
