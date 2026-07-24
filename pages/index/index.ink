@@ -137,6 +137,12 @@ export default {
     liveTranscript: '',
     heardText: '',
     activeAction: '', // '' | 'answer' | 'get-info' | 'fact-check'
+    // Ink's {{ }} expressions don't support ===, so "is this the active
+    // action" can't be computed inline in the template — these three
+    // booleans are kept in sync with activeAction via setActiveAction().
+    isAnswerActive: false,
+    isGetInfoActive: false,
+    isFactCheckActive: false,
     variants: [],
     pickedVariant: '',
     actionResult: '',
@@ -270,11 +276,11 @@ export default {
       // wait for the user to pick what they actually want.
       this.setData({
         heardText: transcript,
-        activeAction: '',
         variants: [],
         pickedVariant: '',
         actionResult: '',
       });
+      this.setActiveAction('');
       this.completeTurn('idle');
     };
 
@@ -383,6 +389,15 @@ export default {
     this.disposeRecognition();
   },
 
+  setActiveAction(key) {
+    this.setData({
+      activeAction: key,
+      isAnswerActive: key === 'answer',
+      isGetInfoActive: key === 'get-info',
+      isFactCheckActive: key === 'fact-check',
+    });
+  },
+
   async runAction(event) {
     const actionKey = event && event.currentTarget && event.currentTarget.dataset
       ? event.currentTarget.dataset.action
@@ -390,8 +405,8 @@ export default {
     const action = ACTIONS[actionKey];
     if (!action || this.data.isBusy || !this.data.heardText) return;
 
+    this.setActiveAction(actionKey);
     this.setData({
-      activeAction: actionKey,
       variants: [],
       pickedVariant: '',
       actionResult: '',
@@ -407,6 +422,7 @@ export default {
         const variants = texts.map((text, index) => ({
           label: VARIANT_LABELS[index] || `Opsi ${index + 1}`,
           text,
+          picked: false,
         }));
         this.setData({ variants });
       } else {
@@ -425,7 +441,11 @@ export default {
       : -1;
     const variant = this.data.variants[index];
     if (!variant) return;
-    this.setData({ pickedVariant: variant.text });
+    const variants = this.data.variants.map((entry, entryIndex) => ({
+      ...entry,
+      picked: entryIndex === index,
+    }));
+    this.setData({ variants, pickedVariant: variant.text });
   },
 
   async resetTurn() {
@@ -437,10 +457,10 @@ export default {
     this.recognitionFailed = false;
 
     await this.refreshAvailability();
+    this.setActiveAction('');
     this.setData({
       liveTranscript: '',
       heardText: '',
-      activeAction: '',
       variants: [],
       pickedVariant: '',
       actionResult: '',
@@ -496,28 +516,28 @@ export default {
       <!-- Three fixed actions, always available once something's been
            heard — Mira-reference pattern, not one automatic reply. -->
       <view class="pill-row">
-        <button class="action-pill {{activeAction === 'get-info' ? 'action-pill-active' : ''}}" data-action="get-info" bindtap="runAction" disabled="{{isBusy}}">
+        <button class="action-pill {{isGetInfoActive ? 'action-pill-active' : ''}}" data-action="get-info" bindtap="runAction" disabled="{{isBusy}}">
           Get Info
         </button>
-        <button class="action-pill {{activeAction === 'fact-check' ? 'action-pill-active' : ''}}" data-action="fact-check" bindtap="runAction" disabled="{{isBusy}}">
+        <button class="action-pill {{isFactCheckActive ? 'action-pill-active' : ''}}" data-action="fact-check" bindtap="runAction" disabled="{{isBusy}}">
           Fact Check
         </button>
-        <button class="action-pill {{activeAction === 'answer' ? 'action-pill-active' : ''}}" data-action="answer" bindtap="runAction" disabled="{{isBusy}}">
+        <button class="action-pill {{isAnswerActive ? 'action-pill-active' : ''}}" data-action="answer" bindtap="runAction" disabled="{{isBusy}}">
           Answer
         </button>
       </view>
 
       <!-- Answer: sub-picklist of short reply-tone labels; the full text
            only shows once one is tapped. -->
-      <view class="result-wrap" ink:if="{{activeAction === 'answer' && variants.length > 0}}">
+      <view class="result-wrap" ink:if="{{isAnswerActive && variants.length > 0}}">
         <view class="picked-bubble" ink:if="{{pickedVariant}}">
           <text class="picked-text">{{pickedVariant}}</text>
         </view>
         <view class="pill-row">
           <button
-            class="variant-pill {{pickedVariant === item.text ? 'variant-pill-picked' : ''}}"
+            class="variant-pill {{item.picked ? 'variant-pill-picked' : ''}}"
             ink:for="{{variants}}"
-            ink:key="index"
+            ink:key="label"
             data-index="{{index}}"
             bindtap="pickVariant"
           >
@@ -527,7 +547,7 @@ export default {
       </view>
 
       <!-- Get Info / Fact Check: a single short plain-text result. -->
-      <view class="picked-bubble" ink:if="{{(activeAction === 'get-info' || activeAction === 'fact-check') && actionResult}}">
+      <view class="picked-bubble" ink:if="{{(isGetInfoActive || isFactCheckActive) && actionResult}}">
         <text class="picked-text">{{actionResult}}</text>
       </view>
     </view>
