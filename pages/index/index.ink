@@ -404,7 +404,7 @@ export default {
 <page>
   <scroll-view class="container" scroll-y="true">
     <view class="hero">
-      <text class="page-title">Conversation Copilot</text>
+      <text class="page-title">Copilot</text>
       <text class="status-chip status-{{status}}">{{status}}</text>
     </view>
 
@@ -423,11 +423,13 @@ export default {
       </text>
     </view>
 
-    <view class="card variants-card" ink:if="{{variants.length > 0}}">
-      <text class="transcript-text-compact">{{heardText}}</text>
-      <view class="variant-list">
+    <view class="variants-wrap" ink:if="{{variants.length > 0}}">
+      <view class="heard-bubble">
+        <text class="transcript-text-compact">{{heardText}}</text>
+      </view>
+      <view class="pill-row">
         <button
-          class="variant-btn {{pickedVariant === item ? 'variant-btn-picked' : ''}}"
+          class="variant-pill {{pickedVariant === item ? 'variant-pill-picked' : ''}}"
           ink:for="{{variants}}"
           ink:key="index"
           data-index="{{index}}"
@@ -564,27 +566,47 @@ export default {
     border: 2px solid #40FF5E;
   }
 
-  .variants-card {
-    justify-content: center;
-  }
-
-  .variant-list {
+  .variants-wrap {
     display: flex;
     flex-direction: column;
+    gap: 8px;
+    flex: 1;
+    min-height: 0;
+  }
+
+  /* Speech-bubble treatment for what was heard, distinct from the pill
+     buttons below it — same visual language as the Mira reference's
+     transcript bubble vs. its separate scattered action pills. */
+  .heard-bubble {
+    padding: 6px 10px;
+    border-radius: 12px;
+    border: 1px solid #40ff5d42;
+    align-self: flex-start;
+  }
+
+  /* Individual floating pills instead of one bordered list box — each
+     option reads as its own small HUD affordance, not a menu item. */
+  .pill-row {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
     gap: 6px;
   }
 
-  .variant-btn {
-    text-align: left;
+  .variant-pill {
+    text-align: right;
     color: #40FF5E;
-    border: 1px solid #40ff5d42;
-    border-radius: 10px;
-    padding: 7px 10px;
-    font-size: 12px;
-    line-height: 15px;
+    border: 1px solid #40ff5d5d;
+    border-radius: 999px;
+    padding: 6px 14px;
+    font-size: 11px;
+    line-height: 14px;
+    background-color: rgba(64, 255, 94, 0.06);
+    max-width: 100%;
   }
 
-  .variant-btn-picked {
+  .variant-pill-picked {
     border: 2px solid #40FF5E;
+    background-color: rgba(64, 255, 94, 0.15);
   }
 </style>
